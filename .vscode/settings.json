@@ -1,0 +1,10 @@
+{
+	// VSCode settings
+	"editor.formatOnSave": true,
+	// Licensing settings
+	"licenser.disableAutoHeaderInsertion": true,
+	"rust-analyzer.showUnlinkedFileNotification": false,
+	"files.associations": {
+		"windows.h": "c"
+	},
+}
