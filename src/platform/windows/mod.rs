@@ -6,11 +6,9 @@ use std::io;
 pub mod raw;
 
 pub fn StringToLPCWSTR(string: impl ToString) -> *const u16 {
-    string
-        .to_string()
-        .encode_utf16()
-        .collect::<Vec<u16>>()
-        .as_ptr()
+    let mut lpcwstr = string.to_string().encode_utf16().collect::<Vec<u16>>();
+    lpcwstr.push('\0' as u16); // LPCWSTR strings must be null-terminated
+    lpcwstr.as_ptr()
 }
 pub unsafe fn VecIntoString(vector: Vec<u16>) -> String {
     String::from_utf16_lossy(vector.as_slice())
@@ -74,13 +72,19 @@ pub unsafe fn RegWriteKey(
     h_key_type: u32,
     data: *const u8,
 ) -> io::Result<()> {
+    let value_name = value_name.to_string();
+    let value_name = if value_name.is_empty() {
+        StringToLPCWSTR(value_name)
+    } else {
+        ptr::null()
+    };
     if raw::RegSetValueExW(
         h_key,
-        StringToLPCWSTR(value_name.to_string()),
+        value_name,
         0,
         h_key_type,
         data,
-        &(mem::size_of::<*const u8>() as u32),
+        mem::size_of::<*const u8>() as u32,
     ) == 0
     {
         Ok(())
