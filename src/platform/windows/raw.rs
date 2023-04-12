@@ -1,5 +1,4 @@
 use core::ffi::{c_long as long, c_ulong as ulong, c_void as void};
-use va_list::VaList;
 
 macro_rules! const_hkey {
     ($name:ident, $address:expr) => {
@@ -203,6 +202,6 @@ extern "system" {
         dwLanguageId: u32,
         lpBuffer: *mut u16,
         nSize: u32,
-        arguments: *const VaList,
+        arguments: *const *const i8,
     ) -> u32;
 }
