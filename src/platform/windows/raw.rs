@@ -153,7 +153,7 @@ extern "system" {
         Reserved: u32,
         dwType: u32,
         lpData: *const u8,
-        cbData: *const u32,
+        cbData: u32,
     ) -> long;
     pub fn RegQueryValueExW(
         h_key: isize,
