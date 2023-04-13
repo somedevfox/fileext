@@ -2,9 +2,7 @@
 	// VSCode settings
 	"editor.formatOnSave": true,
 	// Licensing settings
-	"licenser.disableAutoHeaderInsertion": true,
+	"licenser.license": "LGPLv3",
+	// `rust-analyzer` settings
 	"rust-analyzer.showUnlinkedFileNotification": false,
-	"files.associations": {
-		"windows.h": "c"
-	},
 }
