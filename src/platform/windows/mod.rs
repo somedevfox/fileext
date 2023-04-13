@@ -18,29 +18,6 @@ pub unsafe fn LPCWSTRIntoString(lpString: *const u16) -> String {
     let vector = Vec::from_raw_parts(lpString as *mut u16, len, len);
     VecIntoString(vector)
 }
-// FIXME:
-pub unsafe fn construct_io_error(code: u32) -> io::Error {
-    io::Error::new(
-        match code {
-            5 => io::ErrorKind::PermissionDenied,
-            6 => io::ErrorKind::InvalidData,
-            _ => io::ErrorKind::Other,
-        },
-        {
-            let mut buffer = Vec::with_capacity(256);
-            raw::FormatMessageW(
-                raw::FORMAT_MESSAGE_FROM_SYSTEM | raw::FORMAT_MESSAGE_ALLOCATE_BUFFER,
-                ptr::null(),
-                code,
-                raw::LANG_USER_DEFAULT as u32,
-                buffer.as_mut_ptr(),
-                0,
-                ptr::null(),
-            );
-            VecIntoString(buffer)
-        },
-    )
-}
 
 pub unsafe fn RegCreateKey(h_key: Option<isize>, path: impl ToString) -> io::Result<isize> {
     let h_key = h_key.unwrap_or(0);
@@ -58,11 +35,10 @@ pub unsafe fn RegCreateKey(h_key: Option<isize>, path: impl ToString) -> io::Res
         &mut out_h_key,
         ptr::null_mut(),
     );
-    println!("{res}");
     if res == 0 {
         Ok(out_h_key)
     } else {
-        Err(construct_io_error(res as u32))
+        Err(io::Error::from_raw_os_error(res))
     }
 }
 
@@ -98,18 +74,53 @@ pub unsafe fn RegReadKeyValue(
     lp_type: *mut u32,
 ) -> io::Result<*const u8> {
     let mut buffer = Vec::new();
-    if raw::RegQueryValueExW(
+    let value_name = value_name.to_string();
+
+    let value_name = if value_name.is_empty() {
+        ptr::null()
+    } else {
+        StringToLPCWSTR(value_name)
+    };
+    let mut size = 0;
+    let res = raw::RegQueryValueExW(
         h_key,
-        StringToLPCWSTR(value_name),
+        value_name,
         ptr::null(),
         lp_type,
         buffer.as_mut_ptr(),
-        ptr::null_mut(),
-    ) == 0
-    {
+        &mut size,
+    );
+    println!("{res}");
+    if res == 0 {
         Ok(buffer.as_ptr())
+    } else if res == 234 {
+        let mut buffer = Vec::with_capacity(size as usize);
+        let res = raw::RegQueryValueExW(
+            h_key,
+            value_name,
+            ptr::null(),
+            lp_type,
+            buffer.as_mut_ptr(),
+            &mut size,
+        );
+        if res == 0 {
+            Ok(buffer.as_ptr())
+        } else {
+            Err(io::Error::from_raw_os_error(res))
+        }
     } else {
-        Err(io::Error::last_os_error())
+        Err(io::Error::from_raw_os_error(res))
+    }
+}
+
+pub unsafe fn RegDeleteKey(h_key: isize, subkey: impl ToString) -> io::Result<()> {
+    let subkey = subkey.to_string();
+
+    let res = raw::RegDeleteKeyExW(h_key, StringToLPCWSTR(subkey), raw::KEY_WOW64_32KEY, 0);
+    if res == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::from_raw_os_error(res))
     }
 }
 
@@ -117,7 +128,7 @@ pub unsafe fn RegReadKeyValue(
 pub struct ProgID {
     pub id: String,
     pub name: String,
-    pub default_icon_path: String,
+    pub default_icon_path: Option<String>,
 }
 
 pub unsafe fn CreateProgID(
@@ -141,14 +152,19 @@ pub unsafe fn CreateProgID(
         RegCreateKey(Some(id_key), "CurVer")?,
         "",
         raw::REG_SZ,
-        StringToLPCWSTR(name.clone()) as *const u8,
+        StringToLPCWSTR(id.clone()) as *const u8,
     )?;
-    RegWriteKey(
-        RegCreateKey(Some(id_key), "DefaultIcon")?,
-        "",
-        raw::REG_SZ,
-        StringToLPCWSTR(default_icon_path.clone()) as *const u8,
-    )?;
+    let default_icon_path = if !default_icon_path.is_empty() {
+        RegWriteKey(
+            RegCreateKey(Some(id_key), "DefaultIcon")?,
+            "",
+            raw::REG_SZ,
+            StringToLPCWSTR(default_icon_path.clone()) as *const u8,
+        )?;
+        Some(default_icon_path)
+    } else {
+        None
+    };
     raw::RegCloseKey(id_key);
 
     Ok(ProgID {
@@ -171,20 +187,24 @@ pub unsafe fn GetProcID(id: impl ToString) -> Option<ProgID> {
         &mut h_key,
     ) == 0
     {
-        let name = RegReadKeyValue(h_key, "", ptr::null_mut()).unwrap() as *const u16;
+        let name = RegReadKeyValue(h_key, "", ptr::null_mut()).ok()? as *const u16;
         let name = LPCWSTRIntoString(name);
 
         let mut default_icon_key = 0;
-        raw::RegOpenKeyExW(
+        let default_icon_path = if raw::RegOpenKeyExW(
             h_key,
             StringToLPCWSTR("DefaultIcon"),
             0,
             raw::KEY_READ,
             &mut default_icon_key,
-        );
-        let default_icon_path =
-            RegReadKeyValue(default_icon_key, "", ptr::null_mut()).unwrap() as *const u16;
-        let default_icon_path = LPCWSTRIntoString(default_icon_path);
+        ) == 0
+        {
+            let default_icon_path =
+                RegReadKeyValue(default_icon_key, "", ptr::null_mut()).ok()? as *const u16;
+            Some(LPCWSTRIntoString(default_icon_path))
+        } else {
+            None
+        };
 
         raw::RegCloseKey(default_icon_key);
         raw::RegCloseKey(h_key);
@@ -196,5 +216,25 @@ pub unsafe fn GetProcID(id: impl ToString) -> Option<ProgID> {
         })
     } else {
         None
+    }
+}
+
+pub unsafe fn DeleteProcID(id: impl ToString) -> io::Result<()> {
+    let id = id.to_string();
+
+    let mut h_key = 0;
+    let res = raw::RegOpenKeyExW(
+        raw::HKEY_CLASSES_ROOT,
+        StringToLPCWSTR(id.clone()),
+        0,
+        raw::KEY_ALL_ACCESS,
+        &mut h_key,
+    );
+    if res == 0 {
+        RegDeleteKey(h_key, "CurVer")?;
+        let _ = RegDeleteKey(h_key, "DefaultIcon");
+        RegDeleteKey(raw::HKEY_CLASSES_ROOT, id)
+    } else {
+        Err(io::Error::from_raw_os_error(res as i32))
     }
 }

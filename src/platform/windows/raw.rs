@@ -7,19 +7,6 @@ macro_rules! const_hkey {
     };
 }
 
-/// Create a [language identifier](https://learn.microsoft.com/en-us/windows/win32/intl/language-identifiers) from a primary language identifier and a sublanguage identifier
-#[macro_export]
-macro_rules! make_lang_id {
-    ($p:expr, $s:expr) => {
-        ((($p as i16) << 10) | ($s as i16))
-    };
-}
-
-/// Language neutral
-pub const LANG_NEUTRAL: i16 = 0;
-/// Language as defined in user's computer settings
-pub const LANG_USER_DEFAULT: i16 = make_lang_id!(LANG_NEUTRAL, SUBLANG_DEFAULT);
-
 /// Default sublanguage code
 pub const SUBLANG_DEFAULT: i16 = 1;
 
@@ -169,6 +156,12 @@ extern "system" {
     /// ## Errors:
     /// - [ERROR_INVALID_HANDLE](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-#ERROR_INVALID_HANDLE) if the specified key handle is invalid or the key no longer exists.
     pub fn RegCloseKey(h_key: isize) -> long;
+    pub fn RegDeleteKeyExW(
+        h_key: isize,
+        lpSubKey: *const u16,
+        samDesired: u32,
+        Reserved: u32,
+    ) -> i32;
 }
 
 #[link(name = "Kernel32")]
@@ -179,13 +172,13 @@ extern "system" {
     /// ```
     /// # use fileext::platform::windows::raw::lstrlenW;
     /// # fn main() {
-    /// let string = String::new("Hello, world!");
+    /// let string = String::from("Hello, world!");
     /// let utf16 = string
     /// 	.encode_utf16()
     /// 	.collect::<Vec<u16>>()
     /// 	.as_ptr(); // Turn UTF-8 string into an LPCWSTR
     ///
-    /// let len = unsafe { lstrlenW(utf16) };
+    /// let len = unsafe { lstrlenW(utf16) } as usize;
     ///
     /// assert_eq!(string.len(), len);
     /// # }
