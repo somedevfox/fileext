@@ -19,20 +19,28 @@ use std::io;
 
 pub mod raw;
 
+/// Convert a UTF-8 [String] into a Windows UTF-16 null-terminated string
 pub fn StringToLPCWSTR(string: impl ToString) -> *const u16 {
     let mut lpcwstr = string.to_string().encode_utf16().collect::<Vec<u16>>();
     lpcwstr.push('\0' as u16); // LPCWSTR strings must be null-terminated
     lpcwstr.as_ptr()
 }
+/// Shortcut method to [String::from_utf16_lossy]
 pub unsafe fn VecIntoString(vector: Vec<u16>) -> String {
     String::from_utf16_lossy(vector.as_slice())
 }
+/// Convert a Windows UTF-16 null-terminated string into a UTF-8 [String].
 pub unsafe fn LPCWSTRIntoString(lpString: *const u16) -> String {
     let len = raw::lstrlenW(lpString) as usize;
     let vector = Vec::from_raw_parts(lpString as *mut u16, len, len);
     VecIntoString(vector)
 }
 
+/// Create a key in Windows Registry.
+///
+/// # Errors:
+/// - **[ERROR_ACCESS_DENIED](std::io::ErrorKind::PermissionDenied)** if the program doesn't run as the Administrator, while the key requiring administrator rights for write access.
+/// - **[ERROR_INVALID_HANDLE](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-#ERROR_INVALID_HANDLE)** if the supplied key doesn't exist or is invalid.
 pub unsafe fn RegCreateKey(h_key: Option<isize>, path: impl ToString) -> io::Result<isize> {
     let h_key = h_key.unwrap_or(0);
 
@@ -56,6 +64,12 @@ pub unsafe fn RegCreateKey(h_key: Option<isize>, path: impl ToString) -> io::Res
     }
 }
 
+/// Write data to the supplied key.
+///
+/// # Errors:
+/// - **[ERROR_ACCESS_DENIED](std::io::ErrorKind::PermissionDenied)** if the program doesn't run as the Administrator, while the key requiring administrator rights for write access.
+/// - **[ERROR_INVALID_HANDLE](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-#ERROR_INVALID_HANDLE)** if the supplied key doesn't exist or is invalid.
+/// - **[ERROR_INVALID_PARAMETER](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-#ERROR_INVALID_PARAMETER)** if `h_key_type` is not any [**registry data type**](https://learn.microsoft.com/en-us/windows/win32/shell/hkey-type).
 pub unsafe fn RegWriteKey(
     h_key: isize,
     value_name: impl ToString,
@@ -104,7 +118,6 @@ pub unsafe fn RegReadKeyValue(
         buffer.as_mut_ptr(),
         &mut size,
     );
-    println!("{res}");
     if res == 0 {
         Ok(buffer.as_ptr())
     } else if res == 234 {
