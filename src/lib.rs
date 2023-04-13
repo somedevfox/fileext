@@ -5,7 +5,7 @@
 
 use platform::*;
 use result::{Error, Result};
-use std::{env, path::PathBuf};
+use std::{env, io, path::PathBuf};
 
 pub mod platform;
 pub mod result;
@@ -19,6 +19,7 @@ pub struct ApplicationDescriptor {
 /// Representation of the application to manipulate file type associations in.
 #[derive(Debug)]
 pub struct Application {
+    id: String,
     path: String,
 }
 
@@ -37,9 +38,22 @@ impl Application {
     }
 
     pub fn get(id: impl ToString, path: impl ToString) -> Result<Option<Self>> {
-        let path: String = path.to_string();
+        Ok(
+            #[cfg(windows)]
+            unsafe {
+                windows::GetProcID(id.to_string()).map(|id| Self {
+                    id: id.id,
+                    path: path.to_string(),
+                })
+            },
+        )
+    }
 
-        Ok(None)
+    pub fn delete(self) -> Result<()> {
+        #[cfg(windows)]
+        unsafe {
+            windows::DeleteProcID(self.id).map_err(|why| Error::Io(why))
+        }
     }
 }
 
@@ -72,5 +86,7 @@ mod tests {
             icon_path: String::new(),
         })
         .unwrap();
+
+        app.delete().unwrap();
     }
 }
