@@ -31,7 +31,12 @@ pub struct Application {
 
 impl Application {
     pub fn current(descriptor: ApplicationDescriptor) -> Result<Self> {
-        Self::create(descriptor, current_exe_path()?)
+        let path = current_exe_path()?;
+        if let Some(app) = Self::get(descriptor.id.clone(), path.clone())? {
+            Ok(app)
+        } else {
+            Self::create(descriptor, path)
+        }
     }
 
     pub fn create(descriptor: ApplicationDescriptor, path: impl ToString) -> Result<Self> {
