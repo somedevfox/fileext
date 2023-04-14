@@ -111,6 +111,10 @@ pub const FORMAT_MESSAGE_FROM_HMODULE: u32 = 0x00000800;
 pub const FORMAT_MESSAGE_FROM_STRING: u32 = 0x00000400;
 pub const FORMAT_MESSAGE_FROM_SYSTEM: u32 = 0x00001000;
 pub const FORMAT_MESSAGE_IGNORE_INSERTS: u32 = 0x00000200;
+// * SHChangeNotify event types
+pub const SHCNE_ASSOCCHANGED: i32 = 0x08000000;
+// * SHChangeNotify flags
+pub const SHCNF_IDLIST: u32 = 0;
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -118,6 +122,13 @@ pub struct SECURITY_ATTRIBUTES {
     pub nLength: u32,
     pub lpSecurityDescriptor: *const void,
     pub bInheritHandle: bool,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct FILETIME {
+    pub dwLowDateTime: u32,
+    pub dwHighDateTime: u32,
 }
 
 #[link(name = "Advapi32")]
@@ -148,6 +159,30 @@ extern "system" {
         samDesired: u32,
         phkResult: *mut isize,
     ) -> long;
+    pub fn RegQueryInfoKeyW(
+        h_key: isize,
+        lpClass: *mut u16,
+        lpcchClass: *mut u32,
+        lpReserved: *mut u32,
+        lpcSubKeys: *mut u32,
+        lpcbMaxSubKeyLen: *mut u32,
+        lpcbMaxClassLen: *mut u32,
+        lpcValues: *mut u32,
+        lpcbMaxValueNameLen: *mut u32,
+        lpcbMaxValueLen: *mut u32,
+        lpcbSecurityDescriptor: *mut u32,
+        lpftLastWriteTime: *mut FILETIME,
+    ) -> i32;
+    pub fn RegEnumKeyExW(
+        h_key: isize,
+        dwIndex: u32,
+        lpName: *mut u16,
+        lpcchName: *mut u32,
+        lpReserved: *mut u32,
+        lpClass: *mut u16,
+        lpcchClass: *mut u32,
+        lpftLastWriteTime: *mut FILETIME,
+    ) -> i32;
 
     pub fn RegSetValueExW(
         hKey: isize,
@@ -212,4 +247,9 @@ extern "system" {
         nSize: u32,
         arguments: *const *const i8,
     ) -> u32;
+}
+
+#[link(name = "Shell32")]
+extern "system" {
+    pub fn SHChangeNotify(wEventId: long, uFlags: u32, dwItem1: *const void, dwItem2: *const void);
 }
