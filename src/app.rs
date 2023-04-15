@@ -60,6 +60,20 @@ impl Application {
         )
     }
 
+    pub fn enumerate_associations(&self) -> Result<impl Iterator<Item = String>> {
+        Ok(
+            #[cfg(windows)]
+            unsafe {
+                windows::EnumerateFileTypeAssociations(self.id.clone())
+                    .map_err(|why| Error::Io(why))?
+                    .into_iter()
+            },
+        )
+    }
+    pub fn set_file_type_association(&self) -> Result<()> {
+        Ok(())
+    }
+
     pub fn delete(self) -> Result<()> {
         #[cfg(windows)]
         unsafe {
@@ -97,7 +111,23 @@ mod tests {
             icon_path: String::new(),
         })
         .unwrap();
+    }
 
-        app.delete().unwrap();
+    #[test]
+    fn enumerate() {
+        let app = Application::current(Descriptor {
+            id: String::from("Fileext.Test"),
+            name: String::from("fileext crate"),
+            icon_path: String::new(),
+        })
+        .unwrap();
+
+        println!(
+            "{:?}",
+            app.enumerate_associations()
+                .unwrap()
+                .collect::<Vec<String>>()
+        );
+        assert!(false);
     }
 }

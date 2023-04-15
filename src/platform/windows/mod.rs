@@ -17,6 +17,8 @@
 use core::{ffi::c_void as void, mem, ptr};
 use std::io;
 
+use self::raw::RegOpenKeyExW;
+
 pub mod raw;
 
 /// Convert a UTF-8 [String] into a Windows UTF-16 null-terminated string
@@ -34,6 +36,56 @@ pub unsafe fn LPCWSTRIntoString(lpString: *const u16) -> String {
     let len = raw::lstrlenW(lpString) as usize;
     let vector = Vec::from_raw_parts(lpString as *mut u16, len, len);
     VecIntoString(vector)
+}
+
+/// Get list of subkeys under a supplied HKEY
+///
+/// # Errors
+/// - [ERROR_INVALID_HANDLE](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-#ERROR_INVALID_HANDLE) if the supplied HKEY doesn't exist or is an invalid key handle
+/// - [ERROR_NO_MORE_ITEMS](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-#ERROR_NO_MORE_ITEMS) if the supplied HKEY has no subkeys
+pub unsafe fn RegQueryKeys(parent_h_key: isize) -> io::Result<Vec<String>> {
+    let mut keys = Vec::new();
+
+    let mut num_of_subkeys = 0;
+    let res = raw::RegQueryInfoKeyW(
+        parent_h_key,
+        ptr::null_mut(),
+        ptr::null_mut(),
+        ptr::null_mut(),
+        &mut num_of_subkeys,
+        ptr::null_mut(),
+        ptr::null_mut(),
+        ptr::null_mut(),
+        ptr::null_mut(),
+        ptr::null_mut(),
+        ptr::null_mut(),
+        ptr::null_mut(),
+    );
+    if res == 0 {
+        for i in 0..num_of_subkeys {
+            let mut name_buffer = Vec::with_capacity(255);
+            let mut name_length = 255;
+            let res = raw::RegEnumKeyExW(
+                parent_h_key,
+                i,
+                name_buffer.as_mut_ptr(),
+                &mut name_length,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            );
+            if res == 0 {
+                name_buffer.set_len(name_length as usize);
+                keys.push(VecIntoString(name_buffer));
+            } else {
+                return Err(io::Error::from_raw_os_error(res));
+            }
+        }
+        Ok(keys)
+    } else {
+        Err(io::Error::from_raw_os_error(res))
+    }
 }
 
 /// Create a key in Windows Registry.
@@ -263,5 +315,77 @@ pub unsafe fn DeleteProcID(id: impl ToString) -> io::Result<()> {
         RegDeleteKey(raw::HKEY_CLASSES_ROOT, id)
     } else {
         Err(io::Error::from_raw_os_error(res as i32))
+    }
+}
+
+pub unsafe fn EnumerateFileTypeAssociations(id: impl ToString) -> io::Result<Vec<String>> {
+    let id = id.to_string();
+    let mut associations = Vec::new();
+
+    let keys: Vec<String> = RegQueryKeys(raw::HKEY_CLASSES_ROOT)?
+        .into_iter()
+        .filter(|el| el.starts_with('.'))
+        .collect();
+
+    for key_name in keys {
+        let mut h_key = 0;
+        let res = raw::RegOpenKeyExW(
+            raw::HKEY_CLASSES_ROOT,
+            StringToLPCWSTR(key_name.clone()),
+            0,
+            raw::KEY_READ,
+            &mut h_key,
+        );
+        if res != 0 {
+            return Err(io::Error::from_raw_os_error(res));
+        }
+
+        match RegReadKeyValue(h_key, "", ptr::null_mut()) {
+            Ok(extension_app_id) => {
+                let extension_app_id = LPCWSTRIntoString(extension_app_id as *const u16);
+                if extension_app_id == id {
+                    associations.push(key_name);
+                }
+            }
+            Err(why) => {
+                if why.kind() == io::ErrorKind::NotFound {
+                    continue;
+                } else {
+                    return Err(why);
+                }
+            }
+        }
+    }
+
+    Ok(associations)
+}
+pub unsafe fn CreateFileTypeAssociation(
+    id: impl ToString,
+    extension: impl ToString,
+) -> io::Result<()> {
+    let id = id.to_string();
+    let extension = extension.to_string();
+
+    if RegOpenKeyExW(
+        raw::HKEY_CLASSES_ROOT,
+        StringToLPCWSTR(id.clone()),
+        0,
+        raw::KEY_READ,
+        ptr::null_mut(),
+    ) == 0
+    {
+        let h_key = RegCreateKey(Some(raw::HKEY_CLASSES_ROOT), extension)?;
+        RegWriteKey(h_key, "", raw::REG_SZ, StringToLPCWSTR(id) as *const u8)?;
+
+        raw::SHChangeNotify(
+            raw::SHCNE_ASSOCCHANGED,
+            raw::SHCNF_IDLIST,
+            ptr::null(),
+            ptr::null(),
+        );
+
+        Ok(())
+    } else {
+        Err(io::Error::from_raw_os_error(2))
     }
 }
