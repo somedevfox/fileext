@@ -20,6 +20,8 @@ use std::io;
 /// Error type for Input/Output operations.
 #[derive(Debug)]
 pub enum Error {
+    /// Read permission is required to get data about a type association or get list of them under a specific application.
+    ReadPermissionRequired,
     /// Write permission is require to create or delete an application or register a file type association.
     WritePermissionRequired,
     /// The executable which the application is trying to get doesn't exist in the filesystem.
@@ -31,7 +33,7 @@ pub enum Error {
 // Display traits
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use Error::{ExecutableDoesntExist, Io};
+        use Error::{ExecutableDoesntExist, Io, ReadPermissionRequired, WritePermissionRequired};
 
         if let Io(why) = self {
             why.fmt(f)
@@ -40,7 +42,8 @@ impl Display for Error {
                 f,
                 "{}",
                 match self {
-                    Self::WritePermissionRequired => "write permission required",
+                    ReadPermissionRequired => "read permission required",
+                    WritePermissionRequired => "write permission required",
                     ExecutableDoesntExist => "executable doesn't exist",
                     _ => unreachable!(),
                 }
