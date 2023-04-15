@@ -1,2 +1,5 @@
 /target
 /Cargo.lock
+/*.exe
+
+/windows.c
