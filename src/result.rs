@@ -20,6 +20,8 @@ use std::io;
 /// Error type for Input/Output operations.
 #[derive(Debug)]
 pub enum Error {
+    /// Write permission is require to create or delete an application or register a file type association.
+    WritePermissionRequired,
     /// The executable which the application is trying to get doesn't exist in the filesystem.
     ExecutableDoesntExist,
     /// Operating System I/O Error
@@ -38,6 +40,7 @@ impl Display for Error {
                 f,
                 "{}",
                 match self {
+                    Self::WritePermissionRequired => "write permission required",
                     ExecutableDoesntExist => "executable doesn't exist",
                     _ => unreachable!(),
                 }
